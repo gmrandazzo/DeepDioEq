@@ -5,8 +5,10 @@ from keras.models import Sequential
 from keras.models import Model
 from keras.layers import Input
 from keras.layers import Dense
+from keras.layers import BatchNormalization
 from keras import optimizers
 from keras.callbacks import EarlyStopping
+import tensorflow as tf
 import numpy as np
 import random
 
@@ -21,13 +23,14 @@ def floss(y_true, y_pred):
     int_pred += tf.square(y_pred[:,1])
     int_pred += tf.square(y_pred[:,2])
     res = tf.square(int_true - int_pred)
-    res = tf.square(res)
+    res = tf.sqrt(res)
     res = tf.reduce_mean(res)
     return res
 
 
 def build_model(nunits, ndense):
     m = Sequential()
+    #m.add(BatchNormalization(input_shape=(1,)))
     m.add(Dense(nunits,
                 input_shape=(1,),
                 activation='relu'))
@@ -35,9 +38,9 @@ def build_model(nunits, ndense):
         m.add(Dense(nunits,
                     activation='relu'))
     m.add(Dense(3))
-    m.compile(loss="mse",
-              optimize=optimizes.Adam(lr=0.0005),
-              metrics = ['mse','mae'])
+    m.compile(loss='mse',
+              optimizer=optimizers.Adam(lr=0.0005),
+              metrics = [floss, 'mse','mae'])
     return m
 
 def makeSample(x, y, ids):
@@ -115,7 +118,7 @@ class NN(object):
               batch_size=batch_size,
               epochs=epochs,
               verbose=1,
-              validatio_data=(x_val, y_val))
+              validation_data=(x_val, y_val))
         return m
     
     def makePrediction(self, model, x):
@@ -139,10 +142,11 @@ class NN(object):
                            batch_size)
 
         y_pred = self.makePrediction(m, x_val)
+        print(y_pred.shape)
         for i in range(len(y_val)):
-            s = "%d:"
+            s = "%d:" % (i)
             for j in range(len(y_val[i])):
-                s += "\t%f %f" % (y_val[j], y_pred[j])
+                s += "\t%f %f" % (y_val[i][j], y_pred[i][j])
             print(s)
 
         return 0 
