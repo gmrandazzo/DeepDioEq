@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# (c) 2019 gmrandazzo@gmail.com
+# This file is part of DeepDioEq.
+# You can use,modify, and distribute it under
+# the terms of the GNU General Public Licenze, version 3.
+# See the file LICENSE for details
+
 import sys
+import time
+import keras
 from keras import backend as K
 from keras.models import Sequential
 from keras.models import Model
@@ -8,29 +17,40 @@ from keras.layers import Dense
 from keras.layers import BatchNormalization
 from keras import optimizers
 from keras.callbacks import EarlyStopping
+from keras.callbacks import TensorBoard
 import tensorflow as tf
 import numpy as np
 import random
+
+@tf.function
+def cube(x):
+    return x*x*x
 
 def floss(y_true, y_pred):
     # calc the true number
     # calc the predicted number
     # return the mean square error
-    int_true = tf.square(y_true[:,0])
-    int_true += tf.square(y_true[:,1])
-    int_true += tf.square(y_true[:,2])
-    int_pred = tf.square(y_pred[:,0])
-    int_pred += tf.square(y_pred[:,1])
-    int_pred += tf.square(y_pred[:,2])
+    int_true = cube(y_true[:,0])
+    int_true += cube(y_true[:,1])
+    int_true += cube(y_true[:,2])
+    int_pred = cube(y_pred[:,0])
+    int_pred += cube(y_pred[:,1])
+    int_pred += cube(y_pred[:,2])
     res = tf.square(int_true - int_pred)
     res = tf.sqrt(res)
     res = tf.reduce_mean(res)
     return res
 
-
+def myinit():
+    return keras.initializers.RandomNormal(mean=0.0,
+                                           stddev=12.0,
+                                           seed=None)
 def build_model(nunits, ndense):
     m = Sequential()
-    #m.add(BatchNormalization(input_shape=(1,)))
+    """
+    m.add(BatchNormalization(input_shape=(1,)))
+    m.add(Dense(nunits, activation='relu'))
+    """
     m.add(Dense(nunits,
                 input_shape=(1,),
                 activation='relu'))
@@ -38,7 +58,7 @@ def build_model(nunits, ndense):
         m.add(Dense(nunits,
                     activation='relu'))
     m.add(Dense(3))
-    m.compile(loss='mse',
+    m.compile(loss=floss,
               optimizer=optimizers.Adam(lr=0.0005),
               metrics = [floss, 'mse','mae'])
     return m
@@ -112,13 +132,21 @@ class NN(object):
                   batch_size):
         print("# train %d  # val %d" % (x_train.shape[0],
                                         x_val.shape[0]))
+        log_dir_ = "./logs/%s" % (time.strftime("%Y%m%d%H%M%S"))
+        log_dir_ += "_#u%d_#dl%d_#epochs%d_#batchsize%d" % (nunits, ndense, epochs, batch_size)
+        callbacks_=[TensorBoard(log_dir=log_dir_,
+                                histogram_freq=0,
+                                write_graph=False,
+                                write_images=False)]
+
         m = build_model(nunits, ndense)
         m.fit(x_train,
               y_train,
               batch_size=batch_size,
               epochs=epochs,
               verbose=1,
-              validation_data=(x_val, y_val))
+              validation_data=(x_val, y_val),
+              callbacks=callbacks_)
         return m
     
     def makePrediction(self, model, x):
@@ -152,6 +180,7 @@ class NN(object):
         return 0 
 
     def cv(self):
+        # TODO
         return 0
 
 def main():

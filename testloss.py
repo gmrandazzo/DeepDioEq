@@ -1,14 +1,25 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# (c) 2019 gmrandazzo@gmail.com
+# This file is part of DeepDioEq.
+# You can use,modify, and distribute it under
+# the terms of the GNU General Public Licenze, version 3.
+# See the file LICENSE for details
+
 import numpy as np
 import tensorflow as tf
 from train import floss
 
+def cube(x):
+    return x*x*x
+
 def loss(y_true, y_false):
-    int_true = np.square(y_true[:,0])
-    int_true += np.square(y_true[:,1])
-    int_true += np.square(y_true[:,2])
-    int_pred = np.square(y_pred[:,0])
-    int_pred += np.square(y_pred[:,1])
-    int_pred += np.square(y_pred[:,2])
+    int_true = cube(y_true[:,0])
+    int_true += cube(y_true[:,1])
+    int_true += cube(y_true[:,2])
+    int_pred = cube(y_pred[:,0])
+    int_pred += cube(y_pred[:,1])
+    int_pred += cube(y_pred[:,2])
     res = np.square(int_true - int_pred)
     res = np.sqrt(res)
     res = np.mean(res)
