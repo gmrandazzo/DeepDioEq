@@ -1,0 +1,7 @@
+__pycache__
+*.kdev4
+logs
+log/*
+logs/*/*
+*.h5
+*/*.h5

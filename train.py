@@ -12,39 +12,57 @@ import keras
 from keras import backend as K
 from keras.models import Sequential
 from keras.models import Model
+from keras.models import load_model
 from keras.layers import Input
 from keras.layers import Dense
 from keras.layers import BatchNormalization
 from keras import optimizers
-from keras.callbacks import EarlyStopping
+from keras.callbacks import ModelCheckpoint
 from keras.callbacks import TensorBoard
 import tensorflow as tf
 import numpy as np
 import random
+
+from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split as tss
+from sklearn.metrics import r2_score as r2
+from sklearn.metrics import mean_squared_error as mse
+from sklearn.metrics import mean_absolute_error as mae
+
+from pathlib import Path
+
+def make_number(xyz):
+    def cb(x):
+        return x*x*x
+    return cb(xyz[0]) + cb(xyz[1]) + cb(xyz[2])
 
 @tf.function
 def cube(x):
     return x*x*x
 
 def floss(y_true, y_pred):
-    # calc the true number
-    # calc the predicted number
-    # return the mean square error
+    # How far we are from the solution...
+    #y_true = tf.math.ceil(y_true)
+    #y_true = tf.Print(y_true, [y_true], "True: ")
+    #y_pred = tf.Print(y_pred, [y_pred], "Pred: ")
     int_true = cube(y_true[:,0])
     int_true += cube(y_true[:,1])
     int_true += cube(y_true[:,2])
     int_pred = cube(y_pred[:,0])
     int_pred += cube(y_pred[:,1])
     int_pred += cube(y_pred[:,2])
-    res = tf.square(int_true - int_pred)
-    res = tf.sqrt(res)
-    res = tf.reduce_mean(res)
-    return res
+    #int_true = tf.print(int_true)
+    #int_pred = tf.print(int_pred)
+    #int_true = tf.Print(int_true, [int_true], "True: ")
+    #int_pred = tf.Print(int_pred, [int_pred], "Pred: ")
+    #res = tf.abs(int_true - int_pred)
+    res_n = K.mean(K.square(int_true - int_pred), axis=-1)
+    #res_n = tf.square(int_true - int_pred)
+    #res_n = tf.reduce_mean(res_n)
+    res_xyz = K.mean(K.square(y_pred - y_true), axis=-1)
+    return K.mean(res_n+res_xyz)
 
-def myinit():
-    return keras.initializers.RandomNormal(mean=0.0,
-                                           stddev=12.0,
-                                           seed=None)
+
 def build_model(nunits, ndense):
     m = Sequential()
     """
@@ -71,15 +89,22 @@ def makeSample(x, y, ids):
         y_sample.append(y[i])
     return np.array(x_sample), np.array(y_sample)
 
+    
 def train_test_split(x, y, th=0.2, random_state=None):
     ids = [i for i in range(len(x))]
-    random.seed(random_state)
-    test_ids = random.sample(ids, int(len(ids)*th))
-    x_test, y_test = makeSample(x, y, test_ids)
-    train_ids = [i for i in ids if i not in test_ids]
-    x_train, y_train = makeSample(x, y, train_ids)
+    train, val = tss(ids, random_state=random_state)
+    x_train = x[train]
+    y_train = y[train]
+    x_test = x[val]
+    y_test = y[val]
+    
+    #random.seed(random_state)
+    #test_ids = random.sample(ids, int(len(ids)*th))
+    #x_test, y_test = makeSample(x, y, test_ids)
+    #train_ids = [i for i in ids if i not in test_ids]
+    #x_train, y_train = makeSample(x, y, train_ids)
     return x_train, y_train, x_test, y_test
-
+"""
 def kfoldcv(x,
             y,
             nsplits=5,
@@ -102,7 +127,23 @@ def kfoldcv(x,
         train_ids = [j for j in ids if j not in test_ids]
         x_train, y_train = makeSample(x, y, train_ids)
         yield x_train, y_train, x_test, y_test
-
+"""
+def validation(x_, y_, nsplits=5, nrepeats=4):
+    ids = np.array([i for i in range(len(x_))])
+    x = np.array(x_)
+    y = np.array(y_)
+    for i in range(nrepeats):
+        kf = KFold(n_splits=nsplits)
+        for subset_index, test_index in kf.split(ids):
+            train, val = tss(ids[subset_index])
+            x_train = x[train]
+            y_train = y[train]
+            x_val = x[val]
+            y_val = y[val]
+            x_test = x[ids[test_index]]
+            y_test = y[ids[test_index]]
+            yield x_train, y_train, x_val, y_val, x_test, y_test
+            
 class NN(object):
     def __init__(self, csv_tab):
         self.X, self.y = self.ReadTable(csv_tab)
@@ -129,24 +170,38 @@ class NN(object):
                   nunits,
                   ndense,
                   epochs,
-                  batch_size):
+                  batch_size,
+                  mout_file=None):
         print("# train %d  # val %d" % (x_train.shape[0],
                                         x_val.shape[0]))
         log_dir_ = "./logs/%s" % (time.strftime("%Y%m%d%H%M%S"))
         log_dir_ += "_#u%d_#dl%d_#epochs%d_#batchsize%d" % (nunits, ndense, epochs, batch_size)
-        callbacks_=[TensorBoard(log_dir=log_dir_,
-                                histogram_freq=0,
-                                write_graph=False,
-                                write_images=False)]
+        callbacks_ = None
+        if mout_file is not None:
+            callbacks_=[TensorBoard(log_dir=log_dir_,
+                        histogram_freq=0,
+                        write_graph=False,
+                        write_images=False),
+                        ModelCheckpoint(mout_file,
+                                       monitor="val_loss",
+                                       verbose=0,
+                                       save_best_only=True)]
+        else:
+            callbacks_=[TensorBoard(log_dir=log_dir_,
+                                    histogram_freq=0,
+                                    write_graph=False,
+                                    write_images=False)]
 
         m = build_model(nunits, ndense)
         m.fit(x_train,
               y_train,
               batch_size=batch_size,
               epochs=epochs,
-              verbose=1,
+              verbose=0,
               validation_data=(x_val, y_val),
               callbacks=callbacks_)
+        if mout_file is not None:
+            m = load_model(mout_file, custom_objects={"floss":floss})
         return m
     
     def makePrediction(self, model, x):
@@ -159,7 +214,9 @@ class NN(object):
                   batch_size):
         x_train, y_train, x_val, y_val = train_test_split(self.X,
                                                           self.y,
-                                                          0.2)
+                                                          0.2,
+                                                          123456789)
+        
         m = self.makeModel(x_train,
                            y_train,
                            x_val,
@@ -167,20 +224,59 @@ class NN(object):
                            nunits,
                            ndense,
                            epochs,
-                           batch_size)
-
+                           batch_size,
+                           'tmpmodel.h5')
+        
         y_pred = self.makePrediction(m, x_val)
-        print(y_pred.shape)
+        x = []
+        y = []
+        for i in range(len(y_pred)):
+            x.append(make_number(y_val[i]))
+            y.append(make_number(y_pred[i]))
+        print("R2: %.4f MSE: %.2f MAE :%.2f" % (r2(x,y),
+                                                mse(x,y),
+                                                mae(x,y)))
         for i in range(len(y_val)):
             s = "%d:" % (i)
             for j in range(len(y_val[i])):
                 s += "\t%f %f" % (y_val[i][j], y_pred[i][j])
             print(s)
-
+        
         return 0 
 
-    def cv(self):
-        # TODO
+    def cv(self,
+           nunits,
+           ndense,
+           epochs,
+           batch_size,
+           nsplits,
+           nrepeats,
+           mout_file):
+        cv = 0
+        mpath = Path(mout_file)
+        mpath.mkdir(exist_ok=True)
+        for x_train, y_train, x_val, y_val, x_test, y_test in validation(self.X, self.y, nsplits, nrepeats):
+            mout_file="%s/%d.h5" % (mpath, cv)
+            m = self.makeModel(x_train,
+                               y_train,
+                               x_val,
+                               y_val,
+                               nunits,
+                               ndense,
+                               epochs,
+                               batch_size,
+                               mout_file)
+
+            y_pred = self.makePrediction(m, x_test)
+            x = []
+            y = []
+            for i in range(len(y_pred)):
+                x.append(make_number(y_test[i]))
+                y.append(make_number(y_pred[i]))
+            print("R2: %.4f MSE: %.2f MAE :%.2f" % (r2(x,y),
+                                                    mse(x,y),
+                                                    mae(x,y)))
+            cv += 1
         return 0
 
 def main():
@@ -189,17 +285,28 @@ def main():
     print("sum of three cubes problem")
     print("problem also known to be a Diphantine equation")
     
-    if len(sys.argv) != 5:
-        print("\nUsage %s [epochs] [batch_size] [nunits] [ndense layers]" % sys.argv[0])
-    else:
+    if len(sys.argv) == 5:
         epochs = int(sys.argv[1])
         batch_size = int(sys.argv[2])
         nunits = int(sys.argv[3])
         ndense = int(sys.argv[4])
-
         nn = NN("dataset.csv")
         nn.simplerun(nunits, ndense, epochs, batch_size)
-  
+    elif len(sys.argv) == 8:
+        epochs = int(sys.argv[1])
+        batch_size = int(sys.argv[2])
+        nunits = int(sys.argv[3])
+        ndense = int(sys.argv[4])
+        nsplits = int(sys.argv[5])
+        nrepeats = int(sys.argv[6])
+        mout_path = sys.argv[7]
+        nn = NN("dataset.csv")
+        nn.cv(nunits, ndense, epochs, batch_size, nsplits, nrepeats, mout_path)
+        
+    else:
+        print("\nUsage %s [epochs] [batch_size] [nunits] [ndense layers]" % sys.argv[0])
+        print("\nUsage %s [epochs] [batch_size] [nunits] [ndense layers] [nsplits] [nrepeats] [model out]" % sys.argv[0])
+
     return
 
 if __name__ in "__main__":
