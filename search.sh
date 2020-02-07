@@ -13,7 +13,7 @@ function bfsearch(){
     
     layers=(1 2 3)
     
-    batch_size=(10 15 20)
+    batch_size=(10 100 200)
     
     for b in ${batch_size[*]}; do 
         for u in ${units[*]}; do

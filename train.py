@@ -62,6 +62,16 @@ def floss(y_true, y_pred):
     res_xyz = K.mean(K.square(y_pred - y_true), axis=-1)
     return K.mean(res_n+res_xyz)
 
+def rsq(y_true, y_pred):
+    int_true = cube(y_true[:,0])
+    int_true += cube(y_true[:,1])
+    int_true += cube(y_true[:,2])
+    int_pred = cube(y_pred[:,0])
+    int_pred += cube(y_pred[:,1])
+    int_pred += cube(y_pred[:,2])
+    SS_res =  K.sum(K.square(int_true - int_pred)) 
+    SS_tot = K.sum(K.square(int_true - K.mean(int_pred))) 
+    return ( 1 - SS_res/(SS_tot + K.epsilon()) )
 
 def build_model(nunits, ndense):
     m = Sequential()
@@ -78,7 +88,7 @@ def build_model(nunits, ndense):
     m.add(Dense(3))
     m.compile(loss=floss,
               optimizer=optimizers.Adam(lr=0.0005),
-              metrics = [floss, 'mse','mae'])
+              metrics = [rsq, floss, 'mse','mae'])
     return m
 
 def makeSample(x, y, ids):
@@ -201,7 +211,7 @@ class NN(object):
               validation_data=(x_val, y_val),
               callbacks=callbacks_)
         if mout_file is not None:
-            m = load_model(mout_file, custom_objects={"floss":floss})
+            m = load_model(mout_file, custom_objects={ "rsq": rsq, "floss":floss})
         return m
     
     def makePrediction(self, model, x):
@@ -283,7 +293,7 @@ def main():
     print("DeepDio(phantine)Eq(ations) solver")
     print("\nThis is an attempt to solve the")
     print("sum of three cubes problem")
-    print("problem also known to be a Diphantine equation")
+    print("problem also known to be a Diophantine equation")
     
     if len(sys.argv) == 5:
         epochs = int(sys.argv[1])
