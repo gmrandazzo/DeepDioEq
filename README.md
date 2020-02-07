@@ -8,9 +8,9 @@ Author : Giuseppe Marco Randazzo
 References
 ----------
 
-http://www.asahi-net.or.jp/~KC2H-MSM/mathland/math04/matb0100.htm
-http://www.maroon.dti.ne.jp/fermat/threecubes.html
-http://cr.yp.to/threecubes.html
+- http://www.asahi-net.or.jp/~KC2H-MSM/mathland/math04/matb0100.htm
+- http://www.maroon.dti.ne.jp/fermat/threecubes.html
+- http://cr.yp.to/threecubes.html
 
 
 
