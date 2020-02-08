@@ -5,3 +5,5 @@ log/*
 logs/*/*
 *.h5
 */*.h5
+model_*
+cv_*

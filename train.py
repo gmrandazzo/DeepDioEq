@@ -97,80 +97,46 @@ def makeSample(x, y, ids):
     for i in ids:
         x_sample.append(x[i])
         y_sample.append(y[i])
-    return np.array(x_sample), np.array(y_sample)
+    return np.array(x_sample).astype(float), np.array(y_sample).astype(float)
 
     
 def train_test_split(x, y, th=0.2, random_state=None):
-    ids = [i for i in range(len(x))]
+    ids = list(x.keys())
     train, val = tss(ids, random_state=random_state)
-    x_train = x[train]
-    y_train = y[train]
-    x_test = x[val]
-    y_test = y[val]
-    
-    #random.seed(random_state)
-    #test_ids = random.sample(ids, int(len(ids)*th))
-    #x_test, y_test = makeSample(x, y, test_ids)
-    #train_ids = [i for i in ids if i not in test_ids]
-    #x_train, y_train = makeSample(x, y, train_ids)
+    x_train, y_train = makeSample(x, y, train)
+    x_test, y_test = makeSample(x,y, val)
     return x_train, y_train, x_test, y_test
-"""
-def kfoldcv(x,
-            y,
-            nsplits=5,
-            nrepeats=4,
-            random_state=123456789):
-    ids = [i for i in range(len(x))]
-    random.seed(random_state)
-    ngobj = float(len(x))/float(nsplits)
-    for i in range(nrepeats):
-        random.shuffle(ids)
-        idss = iter(ids)
-        for g in range(ngroups-1):
-            test_ids = list(islice(idss, ngob))
-            x_test, y_test = makeSample(x, y, test_ids)
-            train_ids = [j for j in ids if j not in test_ids]
-            x_train, y_train = makeSample(x, y, train_ids)
-            yield x_train, y_train, x_test, y_test
-        test_ids = list(idss)
-        x_test, y_test = makeSample(x, y, test_ids)
-        train_ids = [j for j in ids if j not in test_ids]
-        x_train, y_train = makeSample(x, y, train_ids)
-        yield x_train, y_train, x_test, y_test
-"""
-def validation(x_, y_, nsplits=5, nrepeats=4):
-    ids = np.array([i for i in range(len(x_))])
-    x = np.array(x_)
-    y = np.array(y_)
+
+def validation(x, y, nsplits=5, nrepeats=4):
+    ids = np.array(list(x.keys()))
     for i in range(nrepeats):
         kf = KFold(n_splits=nsplits)
-        for subset_index, test_index in kf.split(ids):
-            train, val = tss(ids[subset_index])
-            x_train = x[train]
-            y_train = y[train]
-            x_val = x[val]
-            y_val = y[val]
-            x_test = x[ids[test_index]]
-            y_test = y[ids[test_index]]
-            yield x_train, y_train, x_val, y_val, x_test, y_test
+        for subset_indx, test_indx in kf.split(ids):
+            train_keys, val_keys = tss(ids[subset_indx])
+            x_train, y_train =  makeSample(x, y, train_keys)
+            x_val, y_val = makeSample(x,y, val_keys)
+            x_test, y_test = makeSample(x, y, ids[test_indx])
+            yield x_train, y_train, x_val, y_val, x_test, y_test, train_keys, val_keys, ids[test_indx]
             
 class NN(object):
     def __init__(self, csv_tab):
         self.X, self.y = self.ReadTable(csv_tab)
    
     def ReadTable(self, csv_tab):
-        x = []
-        y = []
+        x = {}
+        y = {}
         f =open(csv_tab, 'r')
+        indx = 0
         for line in f:
             if "n" in line:
                 continue
             else:
                 v = str.split(line.strip(), ',')
-                x.append(v[0])
-                y.append(v[1:])
+                x["num%d" % indx] = v[0]
+                y["num%d" % indx] = v[1:]
+                indx += 1
         f.close()
-        return np.array(x).astype(float), np.array(y).astype(float)
+        return x, y
 
     def makeModel(self,
                   x_train,
@@ -261,11 +227,16 @@ class NN(object):
            batch_size,
            nsplits,
            nrepeats,
-           mout_file):
+           mout_path):
         cv = 0
-        mpath = Path(mout_file)
+        
+        predictions = {}
+        for key in self.X.keys():
+            predictions[key] = []
+        
+        mpath = Path(mout_path)
         mpath.mkdir(exist_ok=True)
-        for x_train, y_train, x_val, y_val, x_test, y_test in validation(self.X, self.y, nsplits, nrepeats):
+        for x_train, y_train, x_val, y_val, x_test, y_test, train_keys, val_keys, test_keys in validation(self.X, self.y, nsplits, nrepeats):
             mout_file="%s/%d.h5" % (mpath, cv)
             m = self.makeModel(x_train,
                                y_train,
@@ -280,13 +251,27 @@ class NN(object):
             y_pred = self.makePrediction(m, x_test)
             x = []
             y = []
-            for i in range(len(y_pred)):
+            for i in range(len(test_keys)):
                 x.append(make_number(y_test[i]))
                 y.append(make_number(y_pred[i]))
+                predictions[test_keys[i]].append(float(y[-1]))
+                predictions[test_keys[i]].extend(y_pred[i])
+                
             print("R2: %.4f MSE: %.2f MAE :%.2f" % (r2(x,y),
                                                     mse(x,y),
                                                     mae(x,y)))
             cv += 1
+        fo = open("cv_%s.csv" % (mout_path), "w")
+        for key in predictions.keys():
+            fo.write("%s,%s,%s,%s,%s" % (key,
+                                         self.X[key],
+                                         self.y[key][0],
+                                         self.y[key][1],
+                                         self.y[key][2]))
+            for item in predictions[key]:
+                fo.write(",%f" % (item))
+            fo.write("\n")
+        fo.close()
         return 0
 
 def main():
